@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Testora Platform</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+        (function() {
+            const tgEarly = window.Telegram && window.Telegram.WebApp;
+            if (tgEarly) {
+                tgEarly.ready();
+                tgEarly.expand();
+            }
+        })();
+    </script>
+    <style>
+        :root {
+            --bg: #f1f5f9;
+            --card: #ffffff;
+            --card-sub: #f8fafc;
+            --primary: #2563eb;
+            --primary-text: #ffffff;
+            --primary-hover: #1d4ed8;
+            --text: #0f172a;
+            --muted: #64748b;
+            --success: #16a34a;
+            --warning: #eab308;
+            --danger: #dc2626;
+            --border: #e2e8f0;
+            --shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+        }
+
+        * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        html, body {
+            margin: 0; padding: 0; width: 100%; min-height: 100vh;
+            background: var(--bg); color: var(--text);
+        }
+        body {
+            padding: calc(48px + env(safe-area-inset-top, 14px)) 16px 24px 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container { width: 100%; max-width: 780px; margin: 0 auto; }
+        .card {
+            background: var(--card); border-radius: 20px; padding: 26px;
+            box-shadow: var(--shadow); margin-bottom: 16px;
+            border: 1px solid var(--border);
+        }
+        .top-bar {
+            display: flex; justify-content: space-between; align-items: center;
+            gap: 8px; margin-bottom: 16px; padding-top: 4px;
+        }
+        .lang-group { margin-left: auto; display: flex; gap: 6px; }
+        .lang-group button {
+            border: 1.5px solid var(--border); background: var(--card); color: var(--text); padding: 8px 13px;
+            border-radius: 10px; cursor: pointer; font-weight: 700; font-size: 12.5px; transition: 0.15s;
+        }
+        .lang-group button.active { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
+        .btn {
+            width: 100%; padding: 14px; border: none; border-radius: 12px;
+            font-size: 15px; font-weight: 700; cursor: pointer; transition: 0.18s; margin-bottom: 10px;
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .btn:last-child { margin-bottom: 0; }
+        .btn-primary { background: var(--primary); color: var(--primary-text); box-shadow: 0 4px 12px rgba(37, 99, 235, 0.22); }
+        .btn-primary:hover { background: var(--primary-hover); }
+        .btn-success { background: var(--success); color: #ffffff; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.22); }
+        .btn-success:hover { background: #15803d; }
+        .btn-outline { background: #ffffff; color: var(--primary); border: 1.5px solid #cbd5e1; }
+        .btn-outline:hover { border-color: var(--primary); background: #eff6ff; }
+        .btn-danger { background: #fef2f2; color: var(--danger); border: 1.5px solid #fecaca; }
+        .btn-danger:hover { background: #fee2e2; }
+        .btn-danger-solid { background: var(--danger); color: #ffffff; }
+        .btn-danger-solid:hover { background: #b91c1c; }
+        .btn-sm { width: auto; padding: 8px 14px; font-size: 13px; margin-bottom: 0; }
+
+        .form-group { margin-bottom: 14px; }
+        .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px; color: #334155; }
+        input[type="text"], input[type="number"], textarea {
+            width: 100%; padding: 12px 14px; border: 1.5px solid var(--border);
+            background: var(--card-sub); color: var(--text);
+            border-radius: 12px; font-size: 15px; outline: none; transition: 0.18s;
+        }
+        input:focus, textarea:focus { border-color: var(--primary); background: #ffffff; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12); }
+        input.input-error, textarea.input-error { border-color: var(--danger) !important; background: #fef2f2 !important; }
+
+        .settings-panel {
+            background: var(--card-sub); border: 1px solid var(--border);
+            border-radius: 14px; padding: 4px 14px; margin: 16px 0 18px 0;
+        }
+        .switch-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 0; border-bottom: 1px solid var(--border); gap: 12px;
+        }
+        .switch-row:last-child { border-bottom: none; }
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #cbd5e1; transition: .25s; border-radius: 24px;
+        }
+        .slider:before {
+            position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px;
+            background-color: white; transition: .25s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+        }
+        input:checked + .slider { background-color: var(--primary); }
+        input:checked + .slider:before { transform: translateX(20px); }
+
+        .option-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .option-row input[type="radio"] { width: 20px; height: 20px; accent-color: var(--success); cursor: pointer; flex-shrink: 0; }
+        .nav-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr));
+            gap: 6px; margin-bottom: 16px; max-height: 140px; overflow-y: auto; padding: 4px;
+        }
+        .nav-item {
+            padding: 8px 0; text-align: center; border-radius: 9px; font-size: 13px;
+            font-weight: 700; cursor: pointer; border: 1.5px solid var(--border); background: var(--card-sub); color: var(--text);
+        }
+        .nav-item.current { border: 2px solid var(--primary); background: #eff6ff; color: var(--primary); }
+        .nav-item.done, .nav-item.correct { background: var(--success); color: #fff; border-color: var(--success); }
+        .nav-item.partial { background: var(--warning); color: #000; border-color: var(--warning); }
+        .nav-item.wrong { background: var(--danger); color: #fff; border-color: var(--danger); }
+        .hidden { display: none !important; }
+
+        .code-box {
+            background: #eff6ff; border: 2px dashed var(--primary); padding: 16px;
+            text-align: center; border-radius: 13px; font-size: 26px; font-weight: 800; letter-spacing: 3px; color: var(--primary);
+        }
+        .my-test-box {
+            border: 1.5px solid var(--border); border-radius: 14px; padding: 16px;
+            background: var(--card-sub); margin-top: 16px;
+        }
+        .quiz-opt {
+            padding: 13px 15px; border: 1.5px solid var(--border); border-radius: 12px;
+            margin-bottom: 10px; cursor: pointer; font-weight: 600; transition: 0.15s; background: var(--card-sub);
+        }
+        .quiz-opt:hover { border-color: #93c5fd; }
+        .quiz-opt.selected { border-color: var(--primary); background: #eff6ff; color: var(--primary); }
+        .quiz-opt.opt-correct { border-color: var(--success); background: #dcfce7; color: #14532d; }
+        .quiz-opt.opt-wrong { border-color: var(--danger); background: #fee2e2; color: #7f1d1d; }
+        .stats-bar {
+            display: flex; justify-content: space-between; align-items: center;
+            background: var(--card-sub); border: 1px solid var(--border);
+            padding: 10px 14px; border-radius: 11px; margin-bottom: 14px; font-weight: 700; font-size: 14px;
+        }
+        .mistake-card {
+            border-left: 4px solid var(--danger); background: var(--card-sub);
+            padding: 11px 13px; border-radius: 9px; margin-bottom: 10px; font-size: 14px;
+        }
+
+        .toast-container {
+            position: fixed; top: calc(50px + env(safe-area-inset-top, 14px)); left: 50%; transform: translateX(-50%);
+            z-index: 9999; width: 92%; max-width: 440px; pointer-events: none;
+        }
+        .toast {
+            background: #1e293b; color: #ffffff; padding: 14px 18px; border-radius: 14px;
+            box-shadow: 0 12px 30px rgba(15, 23, 42, 0.25); font-size: 14px; font-weight: 600;
+            display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+            animation: slideDown 0.25s ease-out; border-left: 5px solid var(--primary);
+        }
+        .toast.error { background: #991b1b; border-left-color: #fca5a5; }
+        .toast.success { background: #14532d; border-left-color: #86efac; }
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-16px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .modal-backdrop {
+            position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55);
+            backdrop-filter: blur(4px); z-index: 5000;
+            display: flex; align-items: center; justify-content: center; padding: 16px;
+        }
+        .modal-card {
+            background: #ffffff; border-radius: 22px; max-width: 460px; width: 100%;
+            padding: 24px; box-shadow: 0 20px 45px rgba(15, 23, 42, 0.25); max-height: 88vh; overflow-y: auto;
+        }
+        .confirm-icon-wrap {
+            width: 52px; height: 52px; border-radius: 16px; background: #fef2f2; color: var(--danger);
+            display: flex; align-items: center; justify-content: center; font-size: 24px; margin: 0 auto 14px auto;
+        }
+        .sample-code {
+            background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 12px;
+            padding: 12px; font-family: monospace; font-size: 13px; line-height: 1.5; margin: 8px 0 14px 0;
+        }
+        .sample-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0 14px 0; }
+        .sample-table th, .sample-table td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; }
+        .sample-table th { background: #eff6ff; color: var(--primary); }
+        .ai-banner {
+            background: linear-gradient(135deg, #eff6ff 0%, #f5f3ff 100%);
+            border: 1px solid #c7d2fe; border-radius: 12px; padding: 10px 12px;
+            font-size: 12.5px; color: #3730a3; margin-bottom: 12px; line-height: 1.45;
+        }
+    </style>
+</head>
+<body>
+
+<div id="toastBox" class="toast-container"></div>
+
+<div id="confirmModal" class="modal-backdrop hidden" onclick="if(event.target===this) resolveConfirm(false)">
+    <div class="modal-card" style="max-width: 390px; text-align: center;">
+        <div class="confirm-icon-wrap">⚠️</div>
+        <h3 id="confirmModalTitle" style="margin: 0 0 8px 0; font-size: 18px;">Diqqat!</h3>
+        <p id="confirmModalText" style="color: var(--muted); font-size: 14.5px; line-height: 1.5; margin: 0 0 20px 0;"></p>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <button class="btn btn-outline" style="margin-bottom:0;" onclick="resolveConfirm(false)" data-t="cancelBtn">Bekor qilish</button>
+            <button class="btn btn-danger-solid" style="margin-bottom:0;" onclick="resolveConfirm(true)" data-t="yesContinueBtn">Ha, davom etish</button>
+        </div>
+    </div>
+</div>
+
+<div id="sampleModal" class="modal-backdrop hidden" onclick="if(event.target===this) closeSampleModal()">
+    <div class="modal-card" style="max-width: 500px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <h3 style="margin:0;" data-t="sampleModalTitle">📄 Word va Excel fayl namunasi</h3>
+            <button class="btn btn-outline btn-sm" onclick="closeSampleModal()">✖</button>
+        </div>
+
+        <strong style="font-size:14px; color:var(--primary);">1. Word (.docx) fayl tuzilishi:</strong>
+        <p style="font-size:12.5px; color:var(--muted); margin:4px 0;">To‘g‘ri javob oldiga <b>*</b> yoki <b>+</b> belgisini qo‘ying:</p>
+        <div class="sample-code">
+1. O‘zbekiston poytaxti qaysi shahar?<br>
+            A) Samarqand<br>
+            *B) Toshkent<br>
+            C) Buxoro<br>
+            D) Xiva<br><br>
+2. 2 + 2 * 2 nechaga teng?<br>
+            *A) 6<br>
+            B) 8<br>
+            C) 4<br>
+            D) 10
+        </div>
+
+        <strong style="font-size:14px; color:var(--success);">2. Excel (.xlsx) jadval tuzilishi:</strong>
+        <p style="font-size:12.5px; color:var(--muted); margin:4px 0;">6 ta ustundan iborat bo‘lishi kerak (F ustunida to‘g‘ri harf):</p>
+        <div style="overflow-x:auto;">
+            <table class="sample-table">
+                <tr><th>A (Savol)</th><th>B</th><th>C</th><th>D</th><th>E</th><th>F (To‘g‘ri)</th></tr>
+                <tr><td>2 + 2 = ?</td><td>3</td><td>4</td><td>5</td><td>6</td><td><b>B</b></td></tr>
+                <tr><td>H2O nima?</td><td>Suv</td><td>Oltin</td><td>Havo</td><td>Tuz</td><td><b>A</b></td></tr>
+            </table>
+        </div>
+
+        <button class="btn btn-primary" onclick="closeSampleModal()" data-t="gotItBtn">Tushunarli</button>
+    </div>
+</div>
+
+<div class="container">
+    <div class="top-bar">
+        <button id="homeBtn" class="btn btn-outline btn-sm hidden" onclick="confirmGoHome()">🏠 <span data-t="home">Asosiy sahifa</span></button>
+        <div id="homeControls" class="lang-group">
+            <button onclick="setLang('uz')" id="lang-uz" class="active">O‘Z</button>
+            <button onclick="setLang('ru')" id="lang-ru">RU</button>
+            <button onclick="setLang('en')" id="lang-en">EN</button>
+        </div>
+    </div>
+
+    <!-- 1. ASOSIY SAHIFA -->
+    <div id="screen-home" class="card">
+        <h2 style="margin-top:0; margin-bottom:6px;" data-t="welcomeTitle">Testora Platformasi</h2>
+        <p style="color:var(--muted); font-size:14px; margin-top:0; margin-bottom:18px;" data-t="welcomeSub">Test tuzing yoki maxsus kod orqali bilimingizni sinang.</p>
+        <button class="btn btn-primary" onclick="showScreen('screen-start')" data-t="startTestBtn">▶️ Testni boshlash</button>
+        <button id="createTestMainBtn" class="btn btn-outline" onclick="openNewTestSetup()" data-t="createTestBtn">✍️ Testni tuzish</button>
+
+        <div id="myTestContainer" class="hidden"></div>
+    </div>
+
+    <!-- 2. TEST SOZLAMALARI -->
+    <div id="screen-setup" class="card hidden">
+        <div style="margin-bottom:16px;">
+            <h3 style="margin:0 0 4px 0;" data-t="setupTitle">Test sozlamalari</h3>
+            <span style="font-size:13px; color:var(--muted);" data-t="setupSub">Asosiy parametrlarni kiriting va usulni tanlang</span>
+        </div>
+
+        <form autocomplete="off" onsubmit="return false;">
+            <div class="form-group">
+                <label data-t="testNameLabel">Test nomi</label>
+                <input type="text" id="testTitle" name="t_name_no_auto" autocomplete="off" class="enter-next" placeholder="Masalan: Matematika 1-variant" oninput="this.classList.remove('input-error')">
+            </div>
+
+            <div class="form-grid-2">
+                <div class="form-group">
+                    <label data-t="totalCountLabel">Jami savollar</label>
+                    <input type="number" id="totalCount" name="t_tot_no_auto" autocomplete="off" class="enter-next" placeholder="300" min="1" max="500" oninput="this.classList.remove('input-error')">
+                </div>
+                <div class="form-group">
+                    <label data-t="solveCountLabel">Nechtadan ishlanadi</label>
+                    <input type="number" id="solveCount" name="t_sol_no_auto" autocomplete="off" class="enter-next" placeholder="25" min="1" max="500" oninput="this.classList.remove('input-error')">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label data-t="timeLabel">Vaqt (daqiqa)</label>
+                <input type="number" id="timeMinutes" name="t_time_no_auto" autocomplete="off" class="enter-next" placeholder="30" min="1" max="300" oninput="this.classList.remove('input-error')">
+            </div>
+
+            <div class="settings-panel">
+                <div class="switch-row">
+                    <span style="font-size:13.5px; font-weight:600;" data-t="showEndMistakes">Oxirida xatolarni ko‘rsatish</span>
+                    <label class="switch">
+                        <input type="checkbox" id="optEndMistakes" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div class="switch-row">
+                    <span style="font-size:13.5px; font-weight:600;" data-t="showInstantAnswer">Xatoda darhol to‘g‘risini ko‘rsatish</span>
+                    <label class="switch">
+                        <input type="checkbox" id="optInstantAnswer">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <button type="button" id="saveSettingsOnlyBtn" class="btn btn-success hidden" onclick="saveEditedSettingsDirectly()" data-t="saveSettingsBtn">💾 O‘zgarishlarni saqlash</button>
+
+            <button type="button" class="btn btn-primary" onclick="initManualEditor()" data-t="manualModeBtn">✍️ Savollarni kiritish / tahrirlash</button>
+
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px;">
+                <button type="button" class="btn btn-outline" style="margin-bottom:0" onclick="triggerFileImport('.docx')" data-t="wordImportBtn">📄 Word (.docx)</button>
+                <button type="button" class="btn btn-outline" style="margin-bottom:0" onclick="triggerFileImport('.xlsx,.xls')" data-t="excelImportBtn">📊 Excel (.xlsx)</button>
+            </div>
+            <button type="button" class="btn btn-outline btn-sm" style="width:100%; font-size:13px; color:var(--muted);" onclick="openSampleModal()" data-t="viewSampleBtn">👁️ Word va Excel namunasini ko‘rish</button>
+            <input type="file" id="hiddenFileInput" class="hidden" onchange="handleFileSelected(event)">
+        </form>
+    </div>
+
+    <!-- 3. QO'LDA TEST TUZISH OYNASI -->
+    <div id="screen-editor" class="card hidden">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <strong id="editorHeader" style="font-size:16px;">1 / 10</strong>
+            <span style="font-size:12px; font-weight:700; color:var(--primary);" id="editorProgressText">0 ta tayyor</span>
+        </div>
+
+        <div class="ai-banner">
+            🤖 <strong>AI Super-Paste:</strong> ChatGPT yoki Gemini'dan tuzdirilgan <b>1 ta yoki 50 ta testni birdaniga</b> nusxalab "Savol matni" qatoriga tashlang — hammasi avtomatik variantlarga bo‘linadi!
+        </div>
+
+        <div id="editorNav" class="nav-grid"></div>
+
+        <form autocomplete="off" onsubmit="return false;">
+            <div class="form-group">
+                <label data-t="questionLabel">Savol matni</label>
+                <textarea id="qText" rows="2" autocomplete="off" class="enter-next" oninput="saveDraftEditor()" onpaste="handleSmartPaste(event)"></textarea>
+            </div>
+
+            <label data-t="optionsLabel">Variantlar (To‘g‘ri javobni belgilang)</label>
+            <div class="option-row">
+                <input type="radio" name="correctOpt" value="0" onchange="saveDraftEditor()">
+                <input type="text" id="opt0" autocomplete="off" class="enter-next" placeholder="A variant" oninput="saveDraftEditor()">
+            </div>
+            <div class="option-row">
+                <input type="radio" name="correctOpt" value="1" onchange="saveDraftEditor()">
+                <input type="text" id="opt1" autocomplete="off" class="enter-next" placeholder="B variant" oninput="saveDraftEditor()">
+            </div>
+            <div class="option-row">
+                <input type="radio" name="correctOpt" value="2" onchange="saveDraftEditor()">
+                <input type="text" id="opt2" autocomplete="off" class="enter-next" placeholder="C variant" oninput="saveDraftEditor()">
+            </div>
+            <div class="option-row">
+                <input type="radio" name="correctOpt" value="3" onchange="saveDraftEditor()">
+                <input type="text" id="opt3" autocomplete="off" class="enter-next" placeholder="D variant" oninput="saveDraftEditor()">
+            </div>
+        </form>
+
+        <div style="display:flex; gap:10px; margin-top:16px;">
+            <button class="btn btn-outline" style="margin-bottom:0" onclick="saveCurrentQuestion(true)" data-t="nextQBtn">Keyingi ➡️</button>
+            <button id="finishTestBtnEl" class="btn btn-primary" style="margin-bottom:0" onclick="finishAndPublishTest()" data-t="finishTestBtn">✅ Testni saqlash</button>
+        </div>
+    </div>
+
+    <!-- 4. KOD OLISH OYNASI -->
+    <div id="screen-code" class="card hidden">
+        <h3 style="margin-top:0; text-align:center;" data-t="testReadyTitle">Test muvaffaqiyatli saqlandi!</h3>
+        <p style="text-align:center; color:var(--muted); font-size:14px;" data-t="shareCodeSub">Ushbu kodni test ishlovchilarga yuboring (ustiga bosib nusxalang):</p>
+        <div id="generatedCode" class="code-box" onclick="copyCodeText()" style="cursor:pointer;" title="Nusxalash">000000</div>
+        <button class="btn btn-primary" style="margin-top:16px;" onclick="goHome()" data-t="home">Asosiy sahifa</button>
+    </div>
+
+    <!-- 5. KOD KIRITISH OYNASI -->
+    <div id="screen-start" class="card hidden">
+        <h3 style="margin-top:0" data-t="enterCodeTitle">Test kodini kiriting</h3>
+        <input type="number" id="inputTestCode" autocomplete="off" placeholder="123456" style="margin-bottom:14px; text-align:center; font-size:22px; font-weight:800; letter-spacing:2px;">
+        <button class="btn btn-primary" onclick="fetchAndStartTest()" data-t="startTestBtn">▶️ Testni boshlash</button>
+    </div>
+
+    <!-- 6. TEST ISHLASH OYNASI -->
+    <div id="screen-play" class="card hidden">
+        <div class="stats-bar">
+            <span id="playTitle" style="max-width:45%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Test</span>
+            <span style="color:var(--success);">✅ <span id="correctCounter">0</span> / <span id="totalPlayCounter">0</span></span>
+            <span>⏱ <span id="timerDisplay">00:00</span></span>
+        </div>
+
+        <div id="playNav" class="nav-grid"></div>
+
+        <div id="playQuestionText" style="font-size:16px; font-weight:700; margin-bottom:14px; line-height:1.45;"></div>
+        <div id="playOptionsList"></div>
+
+        <button id="confirmAnswerBtn" class="btn btn-primary" style="margin-top:10px;" onclick="submitAnswer()" data-t="confirmBtn">Belgilash</button>
+        <button id="nextAfterInstantBtn" class="btn btn-outline hidden" style="margin-top:10px;" onclick="goNextPlayQuestion()" data-t="nextQBtn">Keyingi ➡️</button>
+        <button id="finishExamBtn" class="btn btn-primary hidden" style="margin-top:10px;" onclick="finishPlayTest()" data-t="finishExamBtn">🏁 Testni yakunlash</button>
+    </div>
+
+    <!-- 7. NATIJA OYNASI -->
+    <div id="screen-result" class="card hidden">
+        <h2 style="margin-top:0; text-align:center;" data-t="resultTitle">Natija</h2>
+        <div id="resultScoreBox" class="code-box" style="font-size:22px; letter-spacing:1px; margin-bottom:14px;"></div>
+        <div id="mistakesContainer"></div>
+        <button class="btn btn-primary" onclick="restartCurrentTest()" data-t="retryBtn">🔄 Qayta ishlash</button>
+        <button class="btn btn-outline" onclick="goHome()" data-t="home">Asosiy sahifa</button>
+    </div>
+</div>
+
+<script>
+const translations = {
+    uz: {
+        home: "Asosiy sahifa",
+        welcomeTitle: "Testora Platformasi",
+        welcomeSub: "Test tuzing yoki maxsus kod orqali bilimingizni sinang.",
+        startTestBtn: "▶️ Testni boshlash",
+        createTestBtn: "✍️ Testni tuzish",
+        setupTitle: "Test sozlamalari",
+        setupSub: "Asosiy parametrlarni kiriting va usulni tanlang",
+        testNameLabel: "Test nomi",
+        totalCountLabel: "Jami savollar",
+        solveCountLabel: "Nechtadan ishlanadi",
+        timeLabel: "Vaqt (daqiqa)",
+        showEndMistakes: "Oxirida xatolarni ko‘rsatish",
+        showInstantAnswer: "Xatoda darhol to‘g‘risini ko‘rsatish",
+        saveSettingsBtn: "💾 O‘zgarishlarni saqlash",
+        manualModeBtn: "✍️ Savollarni kiritish / tahrirlash",
+        wordImportBtn: "📄 Word (.docx)",
+        excelImportBtn: "📊 Excel (.xlsx)",
+        viewSampleBtn: "👁️ Word va Excel namunasini ko‘rish",
+        sampleModalTitle: "📄 Word va Excel fayl namunasi",
+        gotItBtn: "Tushunarli",
+        questionLabel: "Savol matni",
+        optionsLabel: "Variantlar (To‘g‘ri javobni belgilang)",
+        nextQBtn: "Keyingi ➡️",
+        finishTestBtn: "✅ Testni saqlash",
+        testReadyTitle: "Test muvaffaqiyatli saqlandi!",
+        shareCodeSub: "Ushbu kodni test ishlovchilarga yuboring (ustiga bosib nusxalang):",
+        enterCodeTitle: "Test kodini kiriting",
+        myTestBadge: "📌 Mening test jamlanmam (Maksimum 1 ta)",
+        editTestBtn: "✏️ Tahrirlash",
+        deleteTestBtn: "🗑️ O‘chirish",
+        confirmDeleteTitle: "Testni o‘chirish",
+        confirmDeleteMsg: "Rostdan ham ushbu test jamlanmasini o‘chirmoqchimisiz?",
+        confirmLeaveTitle: "Jarayonni to‘xtatish",
+        confirmLeaveMsg: "Asosiy sahifaga qaytsangiz joriy jarayon to‘xtatiladi. Davom etasizmi?",
+        cancelBtn: "Bekor qilish",
+        yesContinueBtn: "Ha, davom etish",
+        confirmBtn: "Belgilash",
+        finishExamBtn: "🏁 Testni yakunlash",
+        resultTitle: "Test natijasi",
+        retryBtn: "🔄 Qayta ishlash",
+        mistakesHeader: "❌ Xato qilingan savollar:",
+        fillAllWarning: "Iltimos, qizil bilan belgilangan maydonlarni to‘ldiring!"
+    },
+    ru: {
+        home: "Главная",
+        welcomeTitle: "Платформа Testora",
+        welcomeSub: "Создавайте тесты или проходите их по специальному коду.",
+        startTestBtn: "▶️ Начать тест",
+        createTestBtn: "✍️ Создать тест",
+        setupTitle: "Настройки теста",
+        setupSub: "Укажите основные параметры и выберите способ ввода",
+        testNameLabel: "Название теста",
+        totalCountLabel: "Всего вопросов",
+        solveCountLabel: "Сколько решать",
+        timeLabel: "Время (минут)",
+        showEndMistakes: "Показать ошибки в конце",
+        showInstantAnswer: "Сразу показывать правильный ответ",
+        saveSettingsBtn: "💾 Сохранить изменения",
+        manualModeBtn: "✍️ Ввод / редактирование вопросов",
+        wordImportBtn: "📄 Word (.docx)",
+        excelImportBtn: "📊 Excel (.xlsx)",
+        viewSampleBtn: "👁️ Посмотреть пример Word и Excel",
+        sampleModalTitle: "📄 Пример файлов Word и Excel",
+        gotItBtn: "Понятно",
+        questionLabel: "Текст вопроса",
+        optionsLabel: "Варианты (отметьте правильный)",
+        nextQBtn: "Следующий ➡️",
+        finishTestBtn: "✅ Сохранить тест",
+        testReadyTitle: "Тест успешно сохранён!",
+        shareCodeSub: "Отправьте этот код участникам (нажмите, чтобы скопировать):",
+        enterCodeTitle: "Введите код теста",
+        myTestBadge: "📌 Мой набор тестов (Максимум 1)",
+        editTestBtn: "✏️ Редактировать",
+        deleteTestBtn: "🗑️ Удалить",
+        confirmDeleteTitle: "Удаление теста",
+        confirmDeleteMsg: "Вы действительно хотите удалить этот набор тестов?",
+        confirmLeaveTitle: "Прервать процесс?",
+        confirmLeaveMsg: "При возврате на главную текущий процесс будет сброшен. Продолжить?",
+        cancelBtn: "Отмена",
+        yesContinueBtn: "Да, продолжить",
+        confirmBtn: "Ответить",
+        finishExamBtn: "🏁 Завершить тест",
+        resultTitle: "Результат теста",
+        retryBtn: "🔄 Пройти заново",
+        mistakesHeader: "❌ Ошибки в вопросах:",
+        fillAllWarning: "Пожалуйста, заполните выделенные красным поля!"
+    },
+    en: {
+        home: "Home",
+        welcomeTitle: "Testora Platform",
+        welcomeSub: "Create custom tests or take an exam using a special code.",
+        startTestBtn: "▶️ Start Test",
+        createTestBtn: "✍️ Create Test",
+        setupTitle: "Test Settings",
+        setupSub: "Enter basic parameters and choose input method",
+        testNameLabel: "Test Title",
+        totalCountLabel: "Total Questions",
+        solveCountLabel: "Questions to Solve",
+        timeLabel: "Time (minutes)",
+        showEndMistakes: "Show mistakes at the end",
+        showInstantAnswer: "Show correct answer immediately",
+        saveSettingsBtn: "💾 Save Changes",
+        manualModeBtn: "✍️ Enter / Edit Questions",
+        wordImportBtn: "📄 Word (.docx)",
+        excelImportBtn: "📊 Excel (.xlsx)",
+        viewSampleBtn: "👁️ View Word & Excel Sample",
+        sampleModalTitle: "📄 Word & Excel File Sample",
+        gotItBtn: "Got it",
+        questionLabel: "Question Text",
+        optionsLabel: "Options (Select the correct answer)",
+        nextQBtn: "Next ➡️",
+        finishTestBtn: "✅ Save Test",
+        testReadyTitle: "Test Saved Successfully!",
+        shareCodeSub: "Share this code with participants (click to copy):",
+        enterCodeTitle: "Enter Test Code",
+        myTestBadge: "📌 My Test Set (Maximum 1)",
+        editTestBtn: "✏️ Edit",
+        deleteTestBtn: "🗑️ Delete",
+        confirmDeleteTitle: "Delete Test",
+        confirmDeleteMsg: "Are you sure you want to delete this test set?",
+        confirmLeaveTitle: "Stop Session?",
+        confirmLeaveMsg: "Returning home will clear your current session. Continue?",
+        cancelBtn: "Cancel",
+        yesContinueBtn: "Yes, Continue",
+        confirmBtn: "Submit Answer",
+        finishExamBtn: "🏁 Finish Test",
+        resultTitle: "Test Result",
+        retryBtn: "🔄 Retake Test",
+        mistakesHeader: "❌ Incorrect Questions:",
+        fillAllWarning: "Please fill in the highlighted fields!"
+    }
+};
+
+let currentLang = 'uz';
+let questions = [];
+let currentIndex = 0;
+let editingCode = null;
+let isSavingTest = false;
+
+const tg = window.Telegram?.WebApp;
+const urlUid = new URLSearchParams(window.location.search).get('uid');
+const tgUserId = tg?.initDataUnsafe?.user?.id?.toString() || urlUid || 'local_guest';
+
+let activeTestRaw = null;
+let playQuestions = [];
+let playIndex = 0;
+let selectedOptionIdx = null;
+let timerInterval = null;
+let secondsLeft = 0;
+
+let confirmResolver = null;
+
+function customConfirm(title, message) {
+    document.getElementById('confirmModalTitle').textContent = title;
+    document.getElementById('confirmModalText').textContent = message;
+    document.getElementById('confirmModal').classList.remove('hidden');
+    return new Promise(resolve => {
+        confirmResolver = resolve;
+    });
+}
+
+function resolveConfirm(result) {
+    document.getElementById('confirmModal').classList.add('hidden');
+    if (confirmResolver) {
+        confirmResolver(result);
+        confirmResolver = null;
+    }
+}
+
+function showToast(msg, type = 'info') {
+    const box = document.getElementById('toastBox');
+    const div = document.createElement('div');
+    div.className = `toast ${type}`;
+    const icon = type === 'error' ? '⚠️' : (type === 'success' ? '✅' : 'ℹ️');
+    div.innerHTML = `<span>${icon}</span><span>${msg}</span>`;
+    box.appendChild(div);
+    setTimeout(() => {
+        div.style.opacity = '0';
+        div.style.transition = '0.25s';
+        setTimeout(() => div.remove(), 260);
+    }, 3500);
+}
+
+function openSampleModal() {
+    document.getElementById('sampleModal').classList.remove('hidden');
+}
+
+function closeSampleModal() {
+    document.getElementById('sampleModal').classList.add('hidden');
+}
+
+function copyCodeText() {
+    const code = document.getElementById('generatedCode').textContent;
+    navigator.clipboard.writeText(code).then(() => showToast(`Kod nusxalandi: ${code}`, 'success'));
+}
+
+function setLang(lang) {
+    if (!translations[lang]) lang = 'uz';
+    currentLang = lang;
+    localStorage.setItem('testora_lang', lang);
+    document.querySelectorAll('.lang-group button').forEach(b => b.classList.remove('active'));
+    document.getElementById('lang-' + lang).classList.add('active');
+    document.querySelectorAll('[data-t]').forEach(el => {
+        const key = el.getAttribute('data-t');
+        if (translations[lang][key]) el.textContent = translations[lang][key];
+    });
+    renderMyTestCard();
+}
+
+function showScreen(id) {
+    if (id !== 'screen-play' && timerInterval) {
+        clearInterval(timerInterval);
+    }
+    document.querySelectorAll('.card').forEach(c => c.classList.add('hidden'));
+    document.getElementById(id).classList.remove('hidden');
+    document.getElementById('homeBtn').classList.toggle('hidden', id === 'screen-home');
+    document.getElementById('homeControls').classList.toggle('hidden', id !== 'screen-home');
+}
+
+async function confirmGoHome() {
+    const inEditor = !document.getElementById('screen-editor').classList.contains('hidden');
+    const inPlay = !document.getElementById('screen-play').classList.contains('hidden');
+    if (inEditor || inPlay) {
+        const t = translations[currentLang];
+        const ok = await customConfirm(t.confirmLeaveTitle, t.confirmLeaveMsg);
+        if (!ok) return;
+        localStorage.removeItem('testora_draft_editor');
+        localStorage.removeItem('testora_active_play');
+    }
+    goHome();
+}
+
+function goHome() {
+    renderMyTestCard();
+    showScreen('screen-home');
+}
+
+function saveDraftEditor() {
+    if (document.getElementById('screen-editor').classList.contains('hidden')) return;
+    const q = document.getElementById('qText').value;
+    const opts = [0,1,2,3].map(i => document.getElementById('opt' + i).value);
+    const checked = document.querySelector('input[name="correctOpt"]:checked');
+    questions[currentIndex] = {
+        q, opts, correct: checked ? parseInt(checked.value) : null
+    };
+    renderNavGrid();
+
+    const draft = {
+        editingCode,
+        title: document.getElementById('testTitle').value,
+        solveCount: document.getElementById('solveCount').value,
+        timeMinutes: document.getElementById('timeMinutes').value,
+        showEndMistakes: document.getElementById('optEndMistakes').checked,
+        showInstantAnswer: document.getElementById('optInstantAnswer').checked,
+        questions,
+        currentIndex
+    };
+    localStorage.setItem('testora_draft_editor', JSON.stringify(draft));
+}
+
+function saveActivePlayState() {
+    if (!activeTestRaw || !playQuestions.length) return;
+    const state = {
+        activeTestRaw,
+        playQuestions,
+        playIndex,
+        endTimestamp: Date.now() + (secondsLeft * 1000)
+    };
+    localStorage.setItem('testora_active_play', JSON.stringify(state));
+}
+
+(function initApp() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const botLang = urlParams.get('lang');
+    const savedLang = localStorage.getItem('testora_lang');
+    setLang(botLang || savedLang || 'uz');
+    renderMyTestCard();
+
+    fetch(`/api/my-test/${tgUserId}`)
+        .then(r => r.json())
+        .then(d => {
+            if (d.success && d.test) {
+                localStorage.setItem('testora_my_test', JSON.stringify(d.test));
+            } else {
+                localStorage.removeItem('testora_my_test');
+            }
+            renderMyTestCard();
+        }).catch(() => {});
+
+    const savedPlay = localStorage.getItem('testora_active_play');
+    if (savedPlay) {
+        try {
+            const st = JSON.parse(savedPlay);
+            activeTestRaw = st.activeTestRaw;
+            playQuestions = st.playQuestions;
+            playIndex = st.playIndex || 0;
+            secondsLeft = Math.max(0, Math.floor((st.endTimestamp - Date.now()) / 1000));
+
+            document.getElementById('playTitle').textContent = activeTestRaw.title;
+            const correctCount = playQuestions.filter(q => q.isRight === true).length;
+            document.getElementById('correctCounter').textContent = correctCount;
+            document.getElementById('totalPlayCounter').textContent = playQuestions.length;
+
+            if (secondsLeft <= 0) {
+                finishPlayTest();
+            } else {
+                startTimer();
+                showScreen('screen-play');
+                renderPlayQuestion();
+            }
+            return;
+        } catch (e) {
+            localStorage.removeItem('testora_active_play');
+        }
+    }
+
+    const savedDraft = localStorage.getItem('testora_draft_editor');
+    if (savedDraft) {
+        try {
+            const dr = JSON.parse(savedDraft);
+            editingCode = dr.editingCode;
+            document.getElementById('testTitle').value = dr.title || '';
+            document.getElementById('totalCount').value = dr.questions ? dr.questions.length : '';
+            document.getElementById('solveCount').value = dr.solveCount || '';
+            document.getElementById('timeMinutes').value = dr.timeMinutes || '';
+            document.getElementById('optEndMistakes').checked = dr.showEndMistakes !== false;
+            document.getElementById('optInstantAnswer').checked = Boolean(dr.showInstantAnswer);
+            questions = dr.questions || [];
+            if (questions.length > 0) {
+                loadQuestionToForm(dr.currentIndex || 0);
+                showScreen('screen-editor');
+            }
+        } catch (e) {
+            localStorage.removeItem('testora_draft_editor');
+        }
+    }
+})();
+
+function renderMyTestCard() {
+    const saved = localStorage.getItem('testora_my_test');
+    const container = document.getElementById('myTestContainer');
+    const createBtn = document.getElementById('createTestMainBtn');
+
+    if (!saved) {
+        container.classList.add('hidden');
+        createBtn.classList.remove('hidden');
+        return;
+    }
+
+    const test = JSON.parse(saved);
+    createBtn.classList.add('hidden');
+    container.classList.remove('hidden');
+
+    const t = translations[currentLang];
+    container.innerHTML = `
+        <div class="my-test-box">
+            <div style="font-size:12px; color:var(--primary); font-weight:700; margin-bottom:6px;">${t.myTestBadge}</div>
+            <div style="font-size:17px; font-weight:800; margin-bottom:6px;">${test.title}</div>
+            <div style="font-size:13px; color:var(--muted); margin-bottom:12px;">
+                🔑 Kod: <strong>${test.code}</strong> &nbsp;|&nbsp; 📝 ${test.solveCount}/${test.questions.length} &nbsp;|&nbsp; ⏱ ${test.timeMinutes} min
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button class="btn btn-outline btn-sm" onclick="editMyTest()">${t.editTestBtn}</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteMyTest()">${t.deleteTestBtn}</button>
+            </div>
+        </div>
+    `;
+}
+
+async function deleteMyTest() {
+    const t = translations[currentLang];
+    const ok = await customConfirm(t.confirmDeleteTitle, t.confirmDeleteMsg);
+    if (!ok) return;
+
+    const saved = localStorage.getItem('testora_my_test');
+    if (saved) {
+        const test = JSON.parse(saved);
+        await fetch(`/api/test/${test.code}`, { method: 'DELETE' }).catch(() => {});
+        localStorage.removeItem('testora_my_test');
+    }
+    renderMyTestCard();
+    showToast("Test jamlanmasi o‘chirildi", "success");
+}
+
+function openNewTestSetup() {
+    editingCode = null;
+    questions = [];
+    document.getElementById('testTitle').value = '';
+    document.getElementById('totalCount').value = '';
+    document.getElementById('solveCount').value = '';
+    document.getElementById('timeMinutes').value = '';
+    document.getElementById('optEndMistakes').checked = true;
+    document.getElementById('optInstantAnswer').checked = false;
+    document.getElementById('saveSettingsOnlyBtn').classList.add('hidden');
+    document.querySelectorAll('.input-error').forEach(el => el.classList.remove('input-error'));
+    showScreen('screen-setup');
+}
+
+function editMyTest() {
+    const saved = localStorage.getItem('testora_my_test');
+    if (!saved) return;
+    const test = JSON.parse(saved);
+    editingCode = test.code;
+    questions = JSON.parse(JSON.stringify(test.questions));
+
+    document.getElementById('testTitle').value = test.title;
+    document.getElementById('totalCount').value = test.questions.length;
+    document.getElementById('solveCount').value = test.solveCount;
+    document.getElementById('timeMinutes').value = test.timeMinutes;
+    document.getElementById('optEndMistakes').checked = test.showEndMistakes;
+    document.getElementById('optInstantAnswer').checked = test.showInstantAnswer;
+    document.getElementById('saveSettingsOnlyBtn').classList.remove('hidden');
+
+    showScreen('screen-setup');
+}
+
+async function saveEditedSettingsDirectly() {
+    if (!editingCode || !questions.length) return;
+    if (!validateSetupFields(true)) return;
+
+    const total = parseInt(document.getElementById('totalCount').value);
+    if (total !== questions.length) {
+        showToast(`Sizda hozir ${questions.length} ta savol bor. Savollar sonini o‘zgartirish uchun pastdagi tugmadan kiring!`, "error");
+        return;
+    }
+
+    const solveCount = Math.min(parseInt(document.getElementById('solveCount').value), questions.length);
+    const payload = {
+        ownerId: tgUserId,
+        code: editingCode,
+        title: document.getElementById('testTitle').value.trim(),
+        solveCount,
+        timeMinutes: parseInt(document.getElementById('timeMinutes').value),
+        showEndMistakes: document.getElementById('optEndMistakes').checked,
+        showInstantAnswer: document.getElementById('optInstantAnswer').checked,
+        questions
+    };
+
+    try {
+        const res = await fetch('/api/save-test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            payload.code = data.code;
+            localStorage.setItem('testora_my_test', JSON.stringify(payload));
+            showToast("Test sozlamalari saqlandi!", "success");
+            goHome();
+        } else {
+            showToast(data.message || "Saqlashda xatolik yuz berdi!", "error");
+        }
+    } catch (err) {
+        showToast("Server bilan aloqa yo‘q!", "error");
+    }
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && e.target.classList.contains('enter-next')) {
+        e.preventDefault();
+        const inputs = Array.from(document.querySelectorAll('.card:not(.hidden) .enter-next'));
+        const idx = inputs.indexOf(e.target);
+        if (idx > -1 && idx < inputs.length - 1) {
+            inputs[idx + 1].focus();
+        }
+    }
+});
+
+function validateSetupFields(requireTotal = true) {
+    const titleEl = document.getElementById('testTitle');
+    const totalEl = document.getElementById('totalCount');
+    const solveEl = document.getElementById('solveCount');
+    const timeEl = document.getElementById('timeMinutes');
+
+    let valid = true;
+    if (!titleEl.value.trim()) { titleEl.classList.add('input-error'); valid = false; }
+    if (requireTotal && (!parseInt(totalEl.value) || parseInt(totalEl.value) < 1)) { totalEl.classList.add('input-error'); valid = false; }
+    if (!parseInt(solveEl.value) || parseInt(solveEl.value) < 1) { solveEl.classList.add('input-error'); valid = false; }
+    if (!parseInt(timeEl.value) || parseInt(timeEl.value) < 1) { timeEl.classList.add('input-error'); valid = false; }
+
+    if (!valid) {
+        showToast(translations[currentLang].fillAllWarning, 'error');
+    }
+    return valid;
+}
+
+function triggerFileImport(acceptExt) {
+    if (!validateSetupFields(false)) return;
+    const input = document.getElementById('hiddenFileInput');
+    input.accept = acceptExt;
+    input.value = '';
+    input.click();
+}
+
+async function handleFileSelected(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const res = await fetch('/api/import-file', { method: 'POST', body: formData });
+        const data = await res.json();
+        if (!res.ok || !data.success) return showToast(data.message || "Faylni o‘qib bo‘lmadi!", 'error');
+
+        questions = data.questions;
+        document.getElementById('totalCount').value = questions.length;
+        currentIndex = 0;
+        loadQuestionToForm(0);
+        showScreen('screen-editor');
+        saveDraftEditor();
+        showToast(`${questions.length} ta savol muvaffaqiyatli yuklandi!`, 'success');
+    } catch (err) {
+        showToast("Server bilan aloqa yo‘q!", 'error');
+    }
+}
+
+function initManualEditor() {
+    if (!validateSetupFields(true)) return;
+    const total = parseInt(document.getElementById('totalCount').value);
+
+    if (questions.length < total) {
+        const extra = Array.from({ length: total - questions.length }, () => ({
+            q: '', opts: ['', '', '', ''], correct: null
+        }));
+        questions = questions.concat(extra);
+    } else if (questions.length > total) {
+        questions = questions.slice(0, total);
+    }
+
+    currentIndex = 0;
+    loadQuestionToForm(0);
+    showScreen('screen-editor');
+    saveDraftEditor();
+}
+
+function renderNavGrid() {
+    const nav = document.getElementById('editorNav');
+    nav.innerHTML = '';
+    let readyCount = 0;
+
+    questions.forEach((item, idx) => {
+        const div = document.createElement('div');
+        div.className = 'nav-item';
+        if (idx === currentIndex) div.classList.add('current');
+        const hasQ = (item.q || '').trim().length > 0;
+        const hasOpts = Array.isArray(item.opts) && item.opts.every(o => (o || '').trim().length > 0);
+        const hasCorr = item.correct !== null && item.correct !== undefined;
+
+        if (hasQ && hasOpts && hasCorr) {
+            div.classList.add('done');
+            readyCount++;
+        } else if (hasQ || (Array.isArray(item.opts) && item.opts.some(o => (o || '').trim().length > 0))) {
+            div.classList.add('partial');
+        }
+
+        div.textContent = idx + 1;
+        div.onclick = () => {
+            saveCurrentQuestion(false);
+            loadQuestionToForm(idx);
+            saveDraftEditor();
+        };
+        nav.appendChild(div);
+    });
+
+    document.getElementById('editorProgressText').textContent = `${readyCount} / ${questions.length} tayyor`;
+}
+
+function loadQuestionToForm(idx) {
+    currentIndex = idx;
+    const item = questions[idx] || { q: '', opts: ['', '', '', ''], correct: null };
+    document.getElementById('editorHeader').textContent = `${idx + 1} / ${questions.length}`;
+    document.getElementById('qText').value = item.q || '';
+    for (let i = 0; i < 4; i++) {
+        document.getElementById('opt' + i).value = (item.opts && item.opts[i]) || '';
+    }
+    document.querySelectorAll('input[name="correctOpt"]').forEach(r => {
+        r.checked = (item.correct !== null && item.correct !== undefined && parseInt(r.value) === item.correct);
+    });
+    renderNavGrid();
+}
+
+function saveCurrentQuestion(goNext) {
+    const q = document.getElementById('qText').value.trim();
+    const opts = [0,1,2,3].map(i => document.getElementById('opt' + i).value.trim());
+    const checked = document.querySelector('input[name="correctOpt"]:checked');
+    questions[currentIndex] = {
+        q, opts, correct: checked ? parseInt(checked.value) : null
+    };
+    renderNavGrid();
+    if (goNext && currentIndex < questions.length - 1) {
+        loadQuestionToForm(currentIndex + 1);
+    }
+    saveDraftEditor();
+}
+
+function parseAIBlocks(rawText) {
+    const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const blocks = [];
+    let curr = null;
+
+    for (const line of lines) {
+        const optMatch = line.match(/^([*+]?)\s*([A-Da-d])[\)\.\:\-]\s*(.+)$/);
+        const ansMatch = line.match(/^(?:to['‘]?g['‘]?ri\s*javob|javob|ответ|answer)\s*[:\-]\s*([A-Da-d])/i);
+
+        if (ansMatch && curr) {
+            const idx = ['A','B','C','D'].indexOf(ansMatch[1].toUpperCase());
+            if (idx !== -1) curr.correct = idx;
+            continue;
+        }
+
+        if (optMatch && curr && curr.opts.length < 4) {
+            const prefixStar = Boolean(optMatch[1]);
+            let optText = optMatch[3].trim();
+            const suffixStar = /(\*|\(\+\)|\(to['‘]?g['‘]?ri\)|\(correct\))$/i.test(optText);
+            if (suffixStar) {
+                optText = optText.replace(/(\*|\(\+\)|\(to['‘]?g['‘]?ri\)|\(correct\))$/i, '').trim();
+            }
+            if (prefixStar || suffixStar) {
+                curr.correct = curr.opts.length;
+            }
+            curr.opts.push(optText);
+        } else {
+            if (curr && curr.q && curr.opts.length >= 2) {
+                while (curr.opts.length < 4) curr.opts.push('');
+                blocks.push(curr);
+            }
+            curr = {
+                q: line.replace(/^\d+[\)\.\-]\s*/, '').trim(),
+                opts: [],
+                correct: null
+            };
+        }
+    }
+    if (curr && curr.q && curr.opts.length >= 2) {
+        while (curr.opts.length < 4) curr.opts.push('');
+        blocks.push(curr);
+    }
+    return blocks;
+}
+
+function handleSmartPaste(e) {
+    const pasted = (e.clipboardData || window.clipboardData).getData('text');
+    const blocks = parseAIBlocks(pasted);
+
+    if (blocks.length >= 1) {
+        e.preventDefault();
+        if (blocks.length === 1) {
+            questions[currentIndex] = blocks[0];
+            loadQuestionToForm(currentIndex);
+            saveDraftEditor();
+            showToast("Savol va variantlar avtomatik ajratildi!", "success");
+        } else {
+            let targetIdx = currentIndex;
+            blocks.forEach(b => {
+                if (targetIdx < questions.length) {
+                    questions[targetIdx] = b;
+                } else {
+                    questions.push(b);
+                }
+                targetIdx++;
+            });
+            document.getElementById('totalCount').value = questions.length;
+            loadQuestionToForm(currentIndex);
+            saveDraftEditor();
+            showToast(`🤖 AI'dan ${blocks.length} ta savol avtomatik joylashtirildi!`, "success");
+        }
+    }
+}
+
+async function finishAndPublishTest() {
+    if (isSavingTest) return;
+    saveCurrentQuestion(false);
+
+    const incomplete = questions.findIndex(item => !item.q.trim() || item.opts.some(o => !o.trim()) || item.correct === null);
+    if (incomplete !== -1) {
+        showToast(`${incomplete + 1}-savol to‘liq emas yoki to‘g‘ri javob belgilanmagan!`, 'error');
+        loadQuestionToForm(incomplete);
+        return;
+    }
+
+    const cleanQuestions = questions.map(item => ({
+        q: item.q.trim(),
+        opts: item.opts.map(o => o.trim()),
+        correct: item.correct
+    }));
+
+    const titleVal = document.getElementById('testTitle').value.trim() || 'Testora Testi';
+    const rawSolve = parseInt(document.getElementById('solveCount').value) || cleanQuestions.length;
+    const solveCount = Math.max(1, Math.min(rawSolve, cleanQuestions.length));
+    const timeMinutes = Math.max(1, parseInt(document.getElementById('timeMinutes').value) || 30);
+
+    const payload = {
+        ownerId: tgUserId,
+        code: editingCode,
+        title: titleVal,
+        solveCount,
+        timeMinutes,
+        showEndMistakes: document.getElementById('optEndMistakes').checked,
+        showInstantAnswer: document.getElementById('optInstantAnswer').checked,
+        questions: cleanQuestions
+    };
+
+    const btnEl = document.getElementById('finishTestBtnEl');
+    isSavingTest = true;
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = "⏳ Saqlanmoqda..."; }
+
+    try {
+        const res = await fetch('/api/save-test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success) {
+            payload.code = data.code;
+            localStorage.setItem('testora_my_test', JSON.stringify(payload));
+            localStorage.removeItem('testora_draft_editor');
+            document.getElementById('generatedCode').textContent = data.code;
+            showScreen('screen-code');
+            showToast("Test muvaffaqiyatli saqlandi!", "success");
+        } else {
+            showToast(data.message || `Server xatosi (${res.status})`, "error");
+        }
+    } catch (err) {
+        showToast("Saqlashda xatolik yuz berdi! Aloqani tekshiring.", "error");
+    } finally {
+        isSavingTest = false;
+        if (btnEl) { btnEl.disabled = false; btnEl.textContent = translations[currentLang].finishTestBtn; }
+    }
+}
+
+function shuffleArray(arr) {
+    const copy = [...arr];
+    for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+}
+
+async function fetchAndStartTest() {
+    const code = document.getElementById('inputTestCode').value.trim();
+    if (!code) return showToast("Iltimos, test kodini kiriting!", "error");
+
+    try {
+        const res = await fetch(`/api/test/${code}`);
+        const data = await res.json();
+        if (!res.ok || !data.success) return showToast("Bunday kodli test topilmadi!", "error");
+
+        activeTestRaw = data.test;
+        prepareAndLaunchPlay();
+    } catch (err) {
+        showToast("Serverga ulanib bo‘lmadi!", "error");
+    }
+}
+
+function prepareAndLaunchPlay() {
+    const picked = shuffleArray(activeTestRaw.questions).slice(0, activeTestRaw.solveCount);
+    playQuestions = picked.map(item => {
+        const mappedOpts = item.opts.map((text, idx) => ({ text, isCorrect: idx === item.correct }));
+        return {
+            q: item.q,
+            opts: shuffleArray(mappedOpts),
+            userChoice: null,
+            isRight: null
+        };
+    });
+
+    playIndex = 0;
+    selectedOptionIdx = null;
+    document.getElementById('playTitle').textContent = activeTestRaw.title;
+    document.getElementById('correctCounter').textContent = '0';
+    document.getElementById('totalPlayCounter').textContent = playQuestions.length;
+
+    secondsLeft = activeTestRaw.timeMinutes * 60;
+    saveActivePlayState();
+    startTimer();
+    showScreen('screen-play');
+    renderPlayQuestion();
+}
+
+function startTimer() {
+    if (timerInterval) clearInterval(timerInterval);
+    updateTimerText();
+    timerInterval = setInterval(() => {
+        secondsLeft--;
+        updateTimerText();
+        if (secondsLeft <= 0) {
+            clearInterval(timerInterval);
+            finishPlayTest();
+        }
+    }, 1000);
+}
+
+function updateTimerText() {
+    const m = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
+    const s = String(secondsLeft % 60).padStart(2, '0');
+    document.getElementById('timerDisplay').textContent = `${m}:${s}`;
+}
+
+function renderPlayNav() {
+    const nav = document.getElementById('playNav');
+    nav.innerHTML = '';
+
+    playQuestions.forEach((item, idx) => {
+        const div = document.createElement('div');
+        div.className = 'nav-item';
+        if (idx === playIndex) div.classList.add('current');
+
+        if (item.userChoice !== null) {
+            div.classList.add(item.isRight ? 'correct' : 'wrong');
+        }
+
+        div.textContent = idx + 1;
+        div.onclick = () => {
+            playIndex = idx;
+            saveActivePlayState();
+            renderPlayQuestion();
+        };
+        nav.appendChild(div);
+    });
+}
+
+function renderPlayQuestion() {
+    renderPlayNav();
+    const item = playQuestions[playIndex];
+    document.getElementById('playQuestionText').textContent = `${playIndex + 1}. ${item.q}`;
+    const list = document.getElementById('playOptionsList');
+    list.innerHTML = '';
+    selectedOptionIdx = null;
+
+    const alreadyAnswered = item.userChoice !== null;
+    const allAnswered = playQuestions.every(q => q.userChoice !== null);
+
+    document.getElementById('confirmAnswerBtn').classList.toggle('hidden', alreadyAnswered);
+    document.getElementById('nextAfterInstantBtn').classList.add('hidden');
+    document.getElementById('finishExamBtn').classList.toggle('hidden', !allAnswered);
+
+    item.opts.forEach((opt, idx) => {
+        const div = document.createElement('div');
+        div.className = 'quiz-opt';
+        div.textContent = `${['A','B','C','D'][idx]}) ${opt.text}`;
+
+        if (alreadyAnswered) {
+            if (idx === item.userChoice) {
+                div.classList.add(item.isRight ? 'opt-correct' : 'opt-wrong');
+            }
+            if (activeTestRaw.showInstantAnswer && opt.isCorrect) {
+                div.classList.add('opt-correct');
+            }
+        } else {
+            div.onclick = () => {
+                document.querySelectorAll('.quiz-opt').forEach(el => el.classList.remove('selected'));
+                div.classList.add('selected');
+                selectedOptionIdx = idx;
+            };
+        }
+        list.appendChild(div);
+    });
+}
+
+function submitAnswer() {
+    if (selectedOptionIdx === null) return showToast("Variantlardan birini tanlang!", "error");
+    const item = playQuestions[playIndex];
+    item.userChoice = selectedOptionIdx;
+    item.isRight = item.opts[selectedOptionIdx].isCorrect;
+
+    const correctCount = playQuestions.filter(q => q.isRight === true).length;
+    document.getElementById('correctCounter').textContent = correctCount;
+    saveActivePlayState();
+
+    const allAnswered = playQuestions.every(q => q.userChoice !== null);
+
+    if (allAnswered) {
+        renderPlayQuestion();
+        return;
+    }
+
+    if (!item.isRight && activeTestRaw.showInstantAnswer) {
+        renderPlayQuestion();
+        document.getElementById('nextAfterInstantBtn').classList.remove('hidden');
+        return;
+    }
+
+    goNextPlayQuestion();
+}
+
+function goNextPlayQuestion() {
+    const nextUnanswered = playQuestions.findIndex((q, i) => i > playIndex && q.userChoice === null);
+    if (nextUnanswered !== -1) {
+        playIndex = nextUnanswered;
+    } else {
+        const anyUnanswered = playQuestions.findIndex(q => q.userChoice === null);
+        if (anyUnanswered !== -1) playIndex = anyUnanswered;
+    }
+    saveActivePlayState();
+    renderPlayQuestion();
+}
+
+function finishPlayTest() {
+    if (timerInterval) clearInterval(timerInterval);
+    localStorage.removeItem('testora_active_play');
+
+    const correctCount = playQuestions.filter(q => q.isRight === true).length;
+    const total = playQuestions.length;
+    const percent = Math.round((correctCount / total) * 100);
+
+    document.getElementById('resultScoreBox').textContent = `${correctCount} / ${total} (${percent}%)`;
+
+    const mistakesDiv = document.getElementById('mistakesContainer');
+    mistakesDiv.innerHTML = '';
+
+    if (activeTestRaw.showEndMistakes) {
+        const mistakes = playQuestions.filter(q => q.isRight !== true);
+        if (mistakes.length > 0) {
+            const t = translations[currentLang];
+            mistakesDiv.innerHTML = `<h4>${t.mistakesHeader}</h4>`;
+            mistakes.forEach(m => {
+                const corrOpt = m.opts.find(o => o.isCorrect);
+                const userOpt = m.userChoice !== null ? m.opts[m.userChoice].text : '—';
+                mistakesDiv.innerHTML += `
+                    <div class="mistake-card">
+                        <div style="font-weight:700; margin-bottom:4px;">${m.q}</div>
+                        <div style="color:var(--danger);">✖ Siz: ${userOpt}</div>
+                        <div style="color:var(--success); font-weight:600;">✔ To‘g‘ri: ${corrOpt.text}</div>
+                    </div>
+                `;
+            });
+        }
+    }
+    showScreen('screen-result');
+}
+
+function restartCurrentTest() {
+    prepareAndLaunchPlay();
+}
+</script>
+</body>
+</html>
