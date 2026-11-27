@@ -4,10 +4,12 @@ const path = require('path');
 const multer = require('multer');
 const mammoth = require('mammoth');
 const XLSX = require('xlsx');
+const mongoose = require('mongoose');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
+const MONGODB_URI = process.env.MONGODB_URI || '';
 const DB_PATH = path.join(__dirname, 'database.json');
 const MAX_TEST_SETS = 300;
 
@@ -19,7 +21,52 @@ const upload = multer({
     limits: { fileSize: 10 * 1024 * 1024 }
 });
 
-function readDB() {
+// --- MongoDB sxemalari va modellari ---
+const questionSchema = new mongoose.Schema({
+    q: { type: String, required: true },
+    opts: { type: [String], required: true },
+    correct: { type: Number, required: true }
+}, { _id: false });
+
+const testSchema = new mongoose.Schema({
+    code: { type: String, required: true, unique: true, index: true },
+    ownerId: { type: String, required: true, index: true },
+    title: { type: String, required: true },
+    solveCount: { type: Number, required: true },
+    timeMinutes: { type: Number, required: true },
+    showEndMistakes: { type: Boolean, default: true },
+    showInstantAnswer: { type: Boolean, default: false },
+    questions: { type: [questionSchema], required: true },
+    updatedAt: { type: String, required: true }
+});
+
+const userTestSchema = new mongoose.Schema({
+    userId: { type: String, required: true, unique: true, index: true },
+    code: { type: String, required: true }
+});
+
+const TestModel = mongoose.model('Test', testSchema);
+const UserTestModel = mongoose.model('UserTest', userTestSchema);
+
+let useMongo = false;
+
+async function initDatabase() {
+    if (!MONGODB_URI) {
+        console.warn('MONGODB_URI topilmadi, vaqtinchalik database.json ishlatiladi.');
+        return;
+    }
+    try {
+        await mongoose.connect(MONGODB_URI);
+        useMongo = true;
+        console.log('MongoDB Atlas muvaffaqiyatli ulandi!');
+    } catch (err) {
+        console.error('MongoDB ulanishda xato:', err.message);
+        console.warn('Zaxira sifatida database.json ishlatiladi.');
+    }
+}
+
+// --- Lokal JSON zaxira funksiyalari (faqat MONGODB_URI bo‘lmaganda) ---
+function readLocalDB() {
     try {
         if (!fs.existsSync(DB_PATH)) {
             const initial = { tests: {}, users: {} };
@@ -39,20 +86,145 @@ function readDB() {
     }
 }
 
-function writeDB(data) {
+function writeLocalDB(data) {
     const tempPath = DB_PATH + '.tmp';
     fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf8');
     fs.renameSync(tempPath, DB_PATH);
 }
 
-function generateUniqueCode(testsObj) {
+// --- Yagona ma’lumot qatlami (MongoDB yoki lokal JSON) ---
+async function getUserTestCode(userId) {
+    if (useMongo) {
+        const doc = await UserTestModel.findOne({ userId }).lean();
+        return doc ? doc.code : null;
+    }
+    const db = readLocalDB();
+    return db.users[userId] || null;
+}
+
+async function getTestByCode(code) {
+    if (useMongo) {
+        const doc = await TestModel.findOne({ code }).lean();
+        if (!doc) return null;
+        const { _id, __v, ...rest } = doc;
+        return rest;
+    }
+    const db = readLocalDB();
+    if (!db.tests[code]) return null;
+    return { code, ...db.tests[code] };
+}
+
+async function deleteTestByCode(code) {
+    if (useMongo) {
+        const doc = await TestModel.findOneAndDelete({ code }).lean();
+        if (!doc) return false;
+        if (doc.ownerId) {
+            await UserTestModel.deleteOne({ userId: doc.ownerId, code });
+        }
+        return true;
+    }
+    const db = readLocalDB();
+    if (!db.tests[code]) return false;
+    const ownerId = db.tests[code].ownerId;
+    delete db.tests[code];
+    if (ownerId && db.users[ownerId] === code) {
+        delete db.users[ownerId];
+    }
+    writeLocalDB(db);
+    return true;
+}
+
+async function countTests() {
+    if (useMongo) {
+        return await TestModel.countDocuments();
+    }
+    const db = readLocalDB();
+    return Object.keys(db.tests).length;
+}
+
+async function generateUniqueCode() {
     let code = '';
-    do {
+    let exists = true;
+    while (exists) {
         code = String(Math.floor(100000 + Math.random() * 900000));
-    } while (testsObj[code]);
+        if (useMongo) {
+            exists = Boolean(await TestModel.exists({ code }));
+        } else {
+            const db = readLocalDB();
+            exists = Boolean(db.tests[code]);
+        }
+    }
     return code;
 }
 
+async function saveOrUpdateTest({ ownerId, requestedCode, title, solveCount, timeMinutes, showEndMistakes, showInstantAnswer, questions }) {
+    const updatedAt = new Date().toISOString();
+
+    if (useMongo) {
+        let targetDoc = null;
+        if (requestedCode) {
+            targetDoc = await TestModel.findOne({ code: requestedCode }).lean();
+        }
+        if (!targetDoc) {
+            const userMapping = await UserTestModel.findOne({ userId: ownerId }).lean();
+            if (userMapping) {
+                targetDoc = await TestModel.findOne({ code: userMapping.code }).lean();
+            }
+        }
+
+        const isUpdate = Boolean(targetDoc);
+        if (!isUpdate) {
+            const total = await countTests();
+            if (total >= MAX_TEST_SETS) {
+                return { error: `Maksimal ${MAX_TEST_SETS} ta test jamlanmasiga ruxsat berilgan!` };
+            }
+        }
+
+        const code = isUpdate ? targetDoc.code : await generateUniqueCode();
+        const payload = {
+            code,
+            ownerId,
+            title,
+            solveCount,
+            timeMinutes,
+            showEndMistakes,
+            showInstantAnswer,
+            questions,
+            updatedAt
+        };
+
+        await TestModel.findOneAndUpdate({ code }, payload, { upsert: true, new: true });
+        await UserTestModel.findOneAndUpdate({ userId: ownerId }, { userId: ownerId, code }, { upsert: true });
+
+        return { code };
+    }
+
+    const db = readLocalDB();
+    const existingCode = requestedCode && db.tests[requestedCode] ? String(requestedCode) : db.users[ownerId];
+    const isUpdate = Boolean(existingCode && db.tests[existingCode]);
+
+    if (!isUpdate && Object.keys(db.tests).length >= MAX_TEST_SETS) {
+        return { error: `Maksimal ${MAX_TEST_SETS} ta test jamlanmasiga ruxsat berilgan!` };
+    }
+
+    const code = isUpdate ? existingCode : await generateUniqueCode();
+    db.tests[code] = {
+        ownerId,
+        title,
+        solveCount,
+        timeMinutes,
+        showEndMistakes,
+        showInstantAnswer,
+        questions,
+        updatedAt
+    };
+    db.users[ownerId] = code;
+    writeLocalDB(db);
+
+    return { code };
+}
+
+// --- Fayl parserlari ---
 function parseDocxText(rawText) {
     const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const parsed = [];
@@ -111,50 +283,60 @@ function parseExcelRows(rows) {
     return parsed;
 }
 
-app.get('/api/my-test/:userId', (req, res) => {
-    const userId = String(req.params.userId || '').trim();
-    const db = readDB();
-    const code = db.users[userId];
-    if (!code || !db.tests[code]) {
-        return res.json({ success: true, test: null });
+// --- API marshrutlari ---
+app.get('/api/my-test/:userId', async (req, res) => {
+    try {
+        const userId = String(req.params.userId || '').trim();
+        const code = await getUserTestCode(userId);
+        if (!code) {
+            return res.json({ success: true, test: null });
+        }
+        const test = await getTestByCode(code);
+        if (!test) {
+            return res.json({ success: true, test: null });
+        }
+        return res.json({
+            success: true,
+            test: { ...test, code }
+        });
+    } catch (err) {
+        console.error('Foydalanuvchi testini olishda xato:', err);
+        return res.status(500).json({ success: false, message: 'Serverda ichki xatolik yuz berdi!' });
     }
-    return res.json({
-        success: true,
-        test: { code, ...db.tests[code] }
-    });
 });
 
-app.get('/api/test/:code', (req, res) => {
-    const code = String(req.params.code || '').trim();
-    const db = readDB();
-    const test = db.tests[code];
-    if (!test) {
-        return res.status(404).json({ success: false, message: 'Bunday kodli test topilmadi!' });
+app.get('/api/test/:code', async (req, res) => {
+    try {
+        const code = String(req.params.code || '').trim();
+        const test = await getTestByCode(code);
+        if (!test) {
+            return res.status(404).json({ success: false, message: 'Bunday kodli test topilmadi!' });
+        }
+        return res.json({
+            success: true,
+            test: { ...test, code }
+        });
+    } catch (err) {
+        console.error('Testni olishda xato:', err);
+        return res.status(500).json({ success: false, message: 'Serverda ichki xatolik yuz berdi!' });
     }
-    return res.json({
-        success: true,
-        test: { code, ...test }
-    });
 });
 
-app.delete('/api/test/:code', (req, res) => {
-    const code = String(req.params.code || '').trim();
-    const db = readDB();
-    if (!db.tests[code]) {
-        return res.status(404).json({ success: false, message: 'Test topilmadi!' });
+app.delete('/api/test/:code', async (req, res) => {
+    try {
+        const code = String(req.params.code || '').trim();
+        const deleted = await deleteTestByCode(code);
+        if (!deleted) {
+            return res.status(404).json({ success: false, message: 'Test topilmadi!' });
+        }
+        return res.json({ success: true });
+    } catch (err) {
+        console.error('Testni o‘chirishda xato:', err);
+        return res.status(500).json({ success: false, message: 'Serverda ichki xatolik yuz berdi!' });
     }
-
-    const ownerId = db.tests[code].ownerId;
-    delete db.tests[code];
-    if (ownerId && db.users[ownerId] === code) {
-        delete db.users[ownerId];
-    }
-
-    writeDB(db);
-    return res.json({ success: true });
 });
 
-app.post('/api/save-test', (req, res) => {
+app.post('/api/save-test', async (req, res) => {
     try {
         const body = req.body || {};
         const ownerId = String(body.ownerId || 'local_guest').trim();
@@ -187,33 +369,22 @@ app.post('/api/save-test', (req, res) => {
             cleanQuestions.push({ q, opts, correct });
         }
 
-        const db = readDB();
-        const existingCode = body.code && db.tests[body.code] ? String(body.code) : db.users[ownerId];
-        const isUpdate = Boolean(existingCode && db.tests[existingCode]);
-
-        if (!isUpdate && Object.keys(db.tests).length >= MAX_TEST_SETS) {
-            return res.status(400).json({
-                success: false,
-                message: `Maksimal ${MAX_TEST_SETS} ta test jamlanmasiga ruxsat berilgan!`
-            });
-        }
-
-        const code = isUpdate ? existingCode : generateUniqueCode(db.tests);
-
-        db.tests[code] = {
+        const result = await saveOrUpdateTest({
             ownerId,
+            requestedCode: body.code ? String(body.code).trim() : '',
             title,
             solveCount,
             timeMinutes,
             showEndMistakes,
             showInstantAnswer,
-            questions: cleanQuestions,
-            updatedAt: new Date().toISOString()
-        };
-        db.users[ownerId] = code;
+            questions: cleanQuestions
+        });
 
-        writeDB(db);
-        return res.json({ success: true, code });
+        if (result.error) {
+            return res.status(400).json({ success: false, message: result.error });
+        }
+
+        return res.json({ success: true, code: result.code });
     } catch (err) {
         console.error('Test saqlashda xato:', err);
         return res.status(500).json({ success: false, message: 'Serverda ichki xatolik yuz berdi!' });
@@ -255,6 +426,7 @@ app.post('/api/import-file', upload.single('file'), async (req, res) => {
     }
 });
 
+// --- Telegram Webhook ---
 app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
     if (!BOT_TOKEN || typeof fetch !== 'function') return;
@@ -264,7 +436,10 @@ app.post('/webhook', async (req, res) => {
     const text = String(msg?.text || '').trim();
     if (!chatId || text !== '/start') return;
 
-    const appUrl = `${req.protocol}://${req.get('host')}/?uid=${msg.from?.id || chatId}`;
+    const host = req.get('host') || 'testora-i2yy.onrender.com';
+    const baseUrl = `https://${host}`;
+    const uid = msg.from?.id || chatId;
+    const appUrl = `${baseUrl}/?uid=${uid}`;
 
     try {
         await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
@@ -272,11 +447,20 @@ app.post('/webhook', async (req, res) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 chat_id: chatId,
-                text: 'Testora platformasiga xush kelibsiz! Test tuzish yoki kod orqali test ishlash uchun pastdagi tugmani bosing:',
+                text:
+                    'Assalomu alaykum! *Testora* platformasiga xush kelibsiz.\n\n' +
+                    'Test tuzish yoki 6 xonali kod orqali test ishlash uchun quyidagi tugmalardan foydalaning. ' +
+                    'Kompyuterda to‘liq ekranda ishlash uchun saytni brauzerda ham ochishingiz mumkin:',
+                parse_mode: 'Markdown',
                 reply_markup: {
-                    inline_keyboard: [[
-                        { text: '🚀 Testora Web App', web_app: { url: appUrl } }
-                    ]]
+                    inline_keyboard: [
+                        [
+                            { text: '🚀 Testora Web App', web_app: { url: appUrl } }
+                        ],
+                        [
+                            { text: '🌐 Brauzerda ochish', url: appUrl }
+                        ]
+                    ]
                 }
             })
         });
@@ -290,6 +474,8 @@ app.use((err, req, res, next) => {
     res.status(400).json({ success: false, message: err.message || 'So‘rovni bajarib bo‘lmadi!' });
 });
 
-app.listen(PORT, () => {
-    console.log(`Testora serveri ${PORT}-portda ishga tushdi.`);
+initDatabase().then(() => {
+    app.listen(PORT, () => {
+        console.log(`Testora serveri ${PORT}-portda ishga tushdi.`);
+    });
 });
