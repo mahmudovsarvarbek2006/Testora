@@ -1,481 +1,433 @@
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
-const multer = require('multer');
-const mammoth = require('mammoth');
-const XLSX = require('xlsx');
-const mongoose = require('mongoose');
+const express = require("express");
+const fs = require("fs");
+const path = require("path");
+const multer = require("multer");
+const XLSX = require("xlsx");
+const mammoth = require("mammoth");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-const BOT_TOKEN = process.env.BOT_TOKEN || '';
-const MONGODB_URI = process.env.MONGODB_URI || '';
-const DB_PATH = path.join(__dirname, 'database.json');
-const MAX_TEST_SETS = 300;
+const PORT = process.env.PORT || 10000;
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const MONGODB_URI = process.env.MONGODB_URI;
+const WEBAPP_URL = "https://testora-i2yy.onrender.com";
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+const DB_FILE = path.join(__dirname, "database.json");
+const upload = multer({ storage: multer.memoryStorage() });
 
-const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 }
-});
+app.use(express.json({ limit: "15mb" }));
+app.use(express.urlencoded({ extended: true, limit: "15mb" }));
+app.use(express.static(path.join(__dirname, "public")));
 
-// --- MongoDB sxemalari va modellari ---
-const questionSchema = new mongoose.Schema({
-    q: { type: String, required: true },
-    opts: { type: [String], required: true },
-    correct: { type: Number, required: true }
-}, { _id: false });
-
-const testSchema = new mongoose.Schema({
-    code: { type: String, required: true, unique: true, index: true },
-    ownerId: { type: String, required: true, index: true },
-    title: { type: String, required: true },
-    solveCount: { type: Number, required: true },
-    timeMinutes: { type: Number, required: true },
-    showEndMistakes: { type: Boolean, default: true },
-    showInstantAnswer: { type: Boolean, default: false },
-    questions: { type: [questionSchema], required: true },
-    updatedAt: { type: String, required: true }
-});
-
-const userTestSchema = new mongoose.Schema({
-    userId: { type: String, required: true, unique: true, index: true },
-    code: { type: String, required: true }
-});
-
-const TestModel = mongoose.model('Test', testSchema);
-const UserTestModel = mongoose.model('UserTest', userTestSchema);
-
+let mongoose = null;
+let QuizModel = null;
+let ResultModel = null;
 let useMongo = false;
 
+function loadLocalDb() {
+  try {
+    if (fs.existsSync(DB_FILE)) {
+      const raw = fs.readFileSync(DB_FILE, "utf8");
+      const parsed = JSON.parse(raw);
+      return {
+        quizzes: Array.isArray(parsed.quizzes) ? parsed.quizzes : [],
+        results: Array.isArray(parsed.results) ? parsed.results : []
+      };
+    }
+  } catch (err) {
+    console.error("database.json o'qishda xato:", err.message);
+  }
+  return { quizzes: [], results: [] };
+}
+
+function saveLocalDb(data) {
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf8");
+  } catch (err) {
+    console.error("database.json yozishda xato:", err.message);
+  }
+}
+
+let localDb = loadLocalDb();
+
 async function initDatabase() {
-    if (!MONGODB_URI) {
-        console.warn('MONGODB_URI topilmadi, vaqtinchalik database.json ishlatiladi.');
-        return;
-    }
-    try {
-        await mongoose.connect(MONGODB_URI);
-        useMongo = true;
-        console.log('MongoDB Atlas muvaffaqiyatli ulandi!');
-    } catch (err) {
-        console.error('MongoDB ulanishda xato:', err.message);
-        console.warn('Zaxira sifatida database.json ishlatiladi.');
-    }
+  if (!MONGODB_URI) {
+    console.log("MONGODB_URI ko'rsatilmagan. Zaxira sifatida database.json ishlatiladi.");
+    return;
+  }
+
+  try {
+    mongoose = require("mongoose");
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 8000
+    });
+
+    const quizSchema = new mongoose.Schema(
+      {
+        code: { type: String, required: true, unique: true },
+        title: { type: String, required: true },
+        description: { type: String, default: "" },
+        questions: { type: Array, default: [] },
+        createdAt: { type: Date, default: Date.now }
+      },
+      { timestamps: true }
+    );
+
+    const resultSchema = new mongoose.Schema(
+      {
+        quizCode: { type: String, required: true },
+        userName: { type: String, required: true },
+        score: { type: Number, required: true },
+        total: { type: Number, required: true },
+        answers: { type: Array, default: [] },
+        submittedAt: { type: Date, default: Date.now }
+      },
+      { timestamps: true }
+    );
+
+    QuizModel = mongoose.models.Quiz || mongoose.model("Quiz", quizSchema);
+    ResultModel = mongoose.models.Result || mongoose.model("Result", resultSchema);
+    useMongo = true;
+    console.log("MongoDB Atlas muvaffaqiyatli ulandi!");
+  } catch (err) {
+    useMongo = false;
+    console.error("MongoDB ulanishda xato:", err.message);
+    console.log("Zaxira sifatida database.json ishlatiladi.");
+  }
 }
 
-// --- Lokal JSON zaxira funksiyalari (faqat MONGODB_URI bo‘lmaganda) ---
-function readLocalDB() {
-    try {
-        if (!fs.existsSync(DB_PATH)) {
-            const initial = { tests: {}, users: {} };
-            fs.writeFileSync(DB_PATH, JSON.stringify(initial, null, 2), 'utf8');
-            return initial;
-        }
-        const raw = fs.readFileSync(DB_PATH, 'utf8').trim();
-        if (!raw) return { tests: {}, users: {} };
-        const parsed = JSON.parse(raw);
-        return {
-            tests: parsed.tests && typeof parsed.tests === 'object' ? parsed.tests : {},
-            users: parsed.users && typeof parsed.users === 'object' ? parsed.users : {}
-        };
-    } catch (err) {
-        console.error('Bazani o‘qishda xato:', err.message);
-        return { tests: {}, users: {} };
-    }
+function generateQuizCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
 }
 
-function writeLocalDB(data) {
-    const tempPath = DB_PATH + '.tmp';
-    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf8');
-    fs.renameSync(tempPath, DB_PATH);
+function parseQuestionsFromText(text) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const questions = [];
+  let current = null;
+
+  for (const line of lines) {
+    const qMatch = line.match(/^(?:\d+[\).\]]|savol\s*\d*[:.)]?|q\s*\d*[:.)]?)\s*(.+)/i);
+    const optMatch = line.match(/^(?:[a-dA-D]|[1-4])[\).\]]\s*(.+)/);
+    const ansMatch = line.match(/^(?:javob|answer|correct|to'?g'?ri\s*javob)\s*[:=-]\s*(.+)/i);
+
+    if (qMatch && !optMatch) {
+      if (current && current.options.length > 0) {
+        questions.push(current);
+      }
+      current = {
+        question: qMatch[1].trim(),
+        options: [],
+        correctIndex: 0
+      };
+    } else if (optMatch && current) {
+      let optText = optMatch[1].trim();
+      const isStarred = optText.endsWith("*") || optText.startsWith("*");
+      if (isStarred) {
+        optText = optText.replace(/^\*|\*$/g, "").trim();
+        current.correctIndex = current.options.length;
+      }
+      current.options.push(optText);
+    } else if (ansMatch && current) {
+      const rawAns = ansMatch[1].trim().toUpperCase();
+      const letterMap = { A: 0, B: 1, C: 2, D: 3, "1": 0, "2": 1, "3": 2, "4": 3 };
+      if (rawAns in letterMap) {
+        current.correctIndex = letterMap[rawAns];
+      } else {
+        const idx = current.options.findIndex((o) => o.toLowerCase() === rawAns.toLowerCase());
+        if (idx >= 0) current.correctIndex = idx;
+      }
+    } else if (!current && line.length > 3) {
+      current = {
+        question: line,
+        options: [],
+        correctIndex: 0
+      };
+    }
+  }
+
+  if (current && current.options.length > 0) {
+    questions.push(current);
+  }
+
+  return questions;
 }
 
-// --- Yagona ma’lumot qatlami (MongoDB yoki lokal JSON) ---
-async function getUserTestCode(userId) {
-    if (useMongo) {
-        const doc = await UserTestModel.findOne({ userId }).lean();
-        return doc ? doc.code : null;
-    }
-    const db = readLocalDB();
-    return db.users[userId] || null;
-}
+app.get("/api/health", (req, res) => {
+  res.json({
+    ok: true,
+    database: useMongo ? "mongodb" : "database.json"
+  });
+});
 
-async function getTestByCode(code) {
-    if (useMongo) {
-        const doc = await TestModel.findOne({ code }).lean();
-        if (!doc) return null;
-        const { _id, __v, ...rest } = doc;
-        return rest;
-    }
-    const db = readLocalDB();
-    if (!db.tests[code]) return null;
-    return { code, ...db.tests[code] };
-}
-
-async function deleteTestByCode(code) {
-    if (useMongo) {
-        const doc = await TestModel.findOneAndDelete({ code }).lean();
-        if (!doc) return false;
-        if (doc.ownerId) {
-            await UserTestModel.deleteOne({ userId: doc.ownerId, code });
-        }
-        return true;
-    }
-    const db = readLocalDB();
-    if (!db.tests[code]) return false;
-    const ownerId = db.tests[code].ownerId;
-    delete db.tests[code];
-    if (ownerId && db.users[ownerId] === code) {
-        delete db.users[ownerId];
-    }
-    writeLocalDB(db);
-    return true;
-}
-
-async function countTests() {
-    if (useMongo) {
-        return await TestModel.countDocuments();
-    }
-    const db = readLocalDB();
-    return Object.keys(db.tests).length;
-}
-
-async function generateUniqueCode() {
-    let code = '';
-    let exists = true;
-    while (exists) {
-        code = String(Math.floor(100000 + Math.random() * 900000));
-        if (useMongo) {
-            exists = Boolean(await TestModel.exists({ code }));
-        } else {
-            const db = readLocalDB();
-            exists = Boolean(db.tests[code]);
-        }
-    }
-    return code;
-}
-
-async function saveOrUpdateTest({ ownerId, requestedCode, title, solveCount, timeMinutes, showEndMistakes, showInstantAnswer, questions }) {
-    const updatedAt = new Date().toISOString();
-
-    if (useMongo) {
-        let targetDoc = null;
-        if (requestedCode) {
-            targetDoc = await TestModel.findOne({ code: requestedCode }).lean();
-        }
-        if (!targetDoc) {
-            const userMapping = await UserTestModel.findOne({ userId: ownerId }).lean();
-            if (userMapping) {
-                targetDoc = await TestModel.findOne({ code: userMapping.code }).lean();
-            }
-        }
-
-        const isUpdate = Boolean(targetDoc);
-        if (!isUpdate) {
-            const total = await countTests();
-            if (total >= MAX_TEST_SETS) {
-                return { error: `Maksimal ${MAX_TEST_SETS} ta test jamlanmasiga ruxsat berilgan!` };
-            }
-        }
-
-        const code = isUpdate ? targetDoc.code : await generateUniqueCode();
-        const payload = {
-            code,
-            ownerId,
-            title,
-            solveCount,
-            timeMinutes,
-            showEndMistakes,
-            showInstantAnswer,
-            questions,
-            updatedAt
-        };
-
-        await TestModel.findOneAndUpdate({ code }, payload, { upsert: true, new: true });
-        await UserTestModel.findOneAndUpdate({ userId: ownerId }, { userId: ownerId, code }, { upsert: true });
-
-        return { code };
+app.post("/api/quizzes", async (req, res) => {
+  try {
+    const { title, description, questions } = req.body;
+    if (!title || !Array.isArray(questions) || questions.length === 0) {
+      return res.status(400).json({ error: "Test nomi va kamida bitta savol majburiy." });
     }
 
-    const db = readLocalDB();
-    const existingCode = requestedCode && db.tests[requestedCode] ? String(requestedCode) : db.users[ownerId];
-    const isUpdate = Boolean(existingCode && db.tests[existingCode]);
-
-    if (!isUpdate && Object.keys(db.tests).length >= MAX_TEST_SETS) {
-        return { error: `Maksimal ${MAX_TEST_SETS} ta test jamlanmasiga ruxsat berilgan!` };
-    }
-
-    const code = isUpdate ? existingCode : await generateUniqueCode();
-    db.tests[code] = {
-        ownerId,
-        title,
-        solveCount,
-        timeMinutes,
-        showEndMistakes,
-        showInstantAnswer,
+    let code = generateQuizCode();
+    if (useMongo && QuizModel) {
+      while (await QuizModel.findOne({ code })) {
+        code = generateQuizCode();
+      }
+      const created = await QuizModel.create({
+        code,
+        title: title.trim(),
+        description: (description || "").trim(),
+        questions
+      });
+      return res.json({ ok: true, code: created.code, quiz: created });
+    } else {
+      while (localDb.quizzes.some((q) => q.code === code)) {
+        code = generateQuizCode();
+      }
+      const quiz = {
+        code,
+        title: title.trim(),
+        description: (description || "").trim(),
         questions,
-        updatedAt
-    };
-    db.users[ownerId] = code;
-    writeLocalDB(db);
+        createdAt: new Date().toISOString()
+      };
+      localDb.quizzes.push(quiz);
+      saveLocalDb(localDb);
+      return res.json({ ok: true, code: quiz.code, quiz });
+    }
+  } catch (err) {
+    console.error("Test yaratishda xato:", err);
+    res.status(500).json({ error: "Testni saqlashda xatolik yuz berdi." });
+  }
+});
 
-    return { code };
+app.get("/api/quizzes/:code", async (req, res) => {
+  try {
+    const code = (req.params.code || "").trim().toUpperCase();
+    if (!code) {
+      return res.status(400).json({ error: "Test kodi kiritilmagan." });
+    }
+
+    if (useMongo && QuizModel) {
+      const quiz = await QuizModel.findOne({ code }).lean();
+      if (!quiz) return res.status(404).json({ error: "Bunday kodli test topilmadi." });
+      return res.json({ ok: true, quiz });
+    } else {
+      const quiz = localDb.quizzes.find((q) => q.code.toUpperCase() === code);
+      if (!quiz) return res.status(404).json({ error: "Bunday kodli test topilmadi." });
+      return res.json({ ok: true, quiz });
+    }
+  } catch (err) {
+    console.error("Testni olishda xato:", err);
+    res.status(500).json({ error: "Testni yuklashda xatolik yuz berdi." });
+  }
+});
+
+app.post("/api/results", async (req, res) => {
+  try {
+    const { quizCode, userName, score, total, answers } = req.body;
+    const normalizedCode = (quizCode || "").trim().toUpperCase();
+    if (!normalizedCode || typeof score !== "number" || typeof total !== "number") {
+      return res.status(400).json({ error: "Natija ma'lumotlari to'liq emas." });
+    }
+
+    const cleanName = (userName || "Foydalanuvchi").trim() || "Foydalanuvchi";
+
+    if (useMongo && ResultModel) {
+      const saved = await ResultModel.create({
+        quizCode: normalizedCode,
+        userName: cleanName,
+        score,
+        total,
+        answers: Array.isArray(answers) ? answers : []
+      });
+      return res.json({ ok: true, result: saved });
+    } else {
+      const result = {
+        quizCode: normalizedCode,
+        userName: cleanName,
+        score,
+        total,
+        answers: Array.isArray(answers) ? answers : [],
+        submittedAt: new Date().toISOString()
+      };
+      localDb.results.push(result);
+      saveLocalDb(localDb);
+      return res.json({ ok: true, result });
+    }
+  } catch (err) {
+    console.error("Natijani saqlashda xato:", err);
+    res.status(500).json({ error: "Natijani saqlashda xatolik yuz berdi." });
+  }
+});
+
+app.get("/api/results/:code", async (req, res) => {
+  try {
+    const code = (req.params.code || "").trim().toUpperCase();
+    if (useMongo && ResultModel) {
+      const list = await ResultModel.find({ quizCode: code }).sort({ submittedAt: -1 }).lean();
+      return res.json({ ok: true, results: list });
+    } else {
+      const list = localDb.results
+        .filter((r) => r.quizCode.toUpperCase() === code)
+        .slice()
+        .reverse();
+      return res.json({ ok: true, results: list });
+    }
+  } catch (err) {
+    console.error("Natijalarni olishda xato:", err);
+    res.status(500).json({ error: "Natijalarni olishda xatolik yuz berdi." });
+  }
+});
+
+app.post("/api/import-questions", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "Fayl tanlanmadi." });
+    }
+
+    const ext = path.extname(req.file.originalname || "").toLowerCase();
+    let extractedText = "";
+
+    if (ext === ".docx") {
+      const docResult = await mammoth.extractRawText({ buffer: req.file.buffer });
+      extractedText = docResult.value || "";
+    } else if (ext === ".xlsx" || ext === ".xls" || ext === ".csv") {
+      const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+      extractedText = rows
+        .map((row) => (Array.isArray(row) ? row.filter(Boolean).join(" | ") : ""))
+        .filter(Boolean)
+        .join("\n");
+    } else {
+      extractedText = req.file.buffer.toString("utf8");
+    }
+
+    const questions = parseQuestionsFromText(extractedText);
+    if (!questions.length) {
+      return res.status(400).json({ error: "Fayldan savollarni ajratib bo'lmadi." });
+    }
+
+    res.json({ ok: true, questions });
+  } catch (err) {
+    console.error("Fayldan import qilishda xato:", err);
+    res.status(500).json({ error: "Faylni o'qishda xatolik yuz berdi." });
+  }
+});
+
+const botTexts = {
+  uz: {
+    welcome:
+      "Assalomu alaykum! Testora platformasiga xush kelibsiz.\n\nTest tuzish yoki 6 xonali kod orqali test ishlash uchun quyidagi tugmalardan foydalaning. Tilni o'zgartirish uchun pastdagi til tugmalarini bosing:",
+    openApp: "🚀 Testora Web App",
+    openBrowser: "🌐 Brauzerda ochish",
+    langChanged: "Til o'zbek tiliga o'zgartirildi."
+  },
+  ru: {
+    welcome:
+      "Здравствуйте! Добро пожаловать на платформу Testora.\n\nИспользуйте кнопки ниже, чтобы создать тест или пройти его по 6-значному коду. Чтобы сменить язык, нажмите кнопку языка ниже:",
+    openApp: "🚀 Testora Web App",
+    openBrowser: "🌐 Открыть в браузере",
+    langChanged: "Язык изменён на русский."
+  },
+  en: {
+    welcome:
+      "Hello! Welcome to the Testora platform.\n\nUse the buttons below to create a test or take one using a 6-digit code. Tap a language button below to switch language:",
+    openApp: "🚀 Testora Web App",
+    openBrowser: "🌐 Open in browser",
+    langChanged: "Language switched to English."
+  }
+};
+
+function getStartKeyboard(lang = "uz") {
+  const t = botTexts[lang] || botTexts.uz;
+  return {
+    inline_keyboard: [
+      [
+        { text: t.openApp, web_app: { url: WEBAPP_URL } }
+      ],
+      [
+        { text: t.openBrowser, url: WEBAPP_URL }
+      ],
+      [
+        { text: "🇺🇿 O'Z", callback_data: "lang_uz" },
+        { text: "🇷🇺 RU", callback_data: "lang_ru" },
+        { text: "🇬🇧 EN", callback_data: "lang_en" }
+      ]
+    ]
+  };
 }
 
-// --- Fayl parserlari ---
-function parseDocxText(rawText) {
-    const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    const parsed = [];
-    let current = null;
-
-    for (const line of lines) {
-        const qMatch = line.match(/^(?:\d+[\)\.\-]|savol\s*\d*[:\.\-]?)\s*(.+)$/i);
-        const optMatch = line.match(/^([*+]?)\s*([A-Da-d])[\)\.\:\-]\s*(.+)$/);
-
-        if (optMatch && current) {
-            const hasStarPrefix = Boolean(optMatch[1]);
-            let optText = optMatch[3].trim();
-            const hasStarSuffix = /(\*|\(\+\))$/.test(optText);
-            if (hasStarSuffix) {
-                optText = optText.replace(/(\*|\(\+\))$/, '').trim();
-            }
-            if (hasStarPrefix || hasStarSuffix) {
-                current.correct = current.opts.length;
-            }
-            if (current.opts.length < 4) {
-                current.opts.push(optText);
-            }
-        } else if (qMatch) {
-            if (current && current.q && current.opts.length === 4 && current.correct !== null) {
-                parsed.push(current);
-            }
-            current = { q: qMatch[1].trim(), opts: [], correct: null };
-        } else if (current && current.opts.length === 0) {
-            current.q += ' ' + line;
-        }
-    }
-
-    if (current && current.q && current.opts.length === 4 && current.correct !== null) {
-        parsed.push(current);
-    }
-
-    return parsed;
+async function telegramRequest(method, payload) {
+  if (!BOT_TOKEN) return;
+  await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
 }
 
-function parseExcelRows(rows) {
-    const parsed = [];
-    const letterToIdx = { A: 0, B: 1, C: 2, D: 3 };
+app.post("/webhook", async (req, res) => {
+  try {
+    const update = req.body;
 
-    for (const row of rows) {
-        if (!Array.isArray(row) || row.length < 6) continue;
-        const q = String(row[0] ?? '').trim();
-        const opts = [0, 1, 2, 3].map(i => String(row[i + 1] ?? '').trim());
-        const ansRaw = String(row[5] ?? '').trim().toUpperCase();
-        const correct = letterToIdx[ansRaw];
+    if (update.message && update.message.text) {
+      const chatId = update.message.chat.id;
+      const text = update.message.text.trim();
 
-        if (q && opts.every(Boolean) && correct !== undefined) {
-            parsed.push({ q, opts, correct });
-        }
-    }
-
-    return parsed;
-}
-
-// --- API marshrutlari ---
-app.get('/api/my-test/:userId', async (req, res) => {
-    try {
-        const userId = String(req.params.userId || '').trim();
-        const code = await getUserTestCode(userId);
-        if (!code) {
-            return res.json({ success: true, test: null });
-        }
-        const test = await getTestByCode(code);
-        if (!test) {
-            return res.json({ success: true, test: null });
-        }
-        return res.json({
-            success: true,
-            test: { ...test, code }
+      if (text === "/start") {
+        await telegramRequest("sendMessage", {
+          chat_id: chatId,
+          text: botTexts.uz.welcome,
+          reply_markup: getStartKeyboard("uz")
         });
-    } catch (err) {
-        console.error('Foydalanuvchi testini olishda xato:', err);
-        return res.status(500).json({ success: false, message: 'Serverda ichki xatolik yuz berdi!' });
+      }
     }
-});
 
-app.get('/api/test/:code', async (req, res) => {
-    try {
-        const code = String(req.params.code || '').trim();
-        const test = await getTestByCode(code);
-        if (!test) {
-            return res.status(404).json({ success: false, message: 'Bunday kodli test topilmadi!' });
-        }
-        return res.json({
-            success: true,
-            test: { ...test, code }
-        });
-    } catch (err) {
-        console.error('Testni olishda xato:', err);
-        return res.status(500).json({ success: false, message: 'Serverda ichki xatolik yuz berdi!' });
-    }
-});
+    if (update.callback_query) {
+      const cb = update.callback_query;
+      const data = cb.data || "";
+      const chatId = cb.message?.chat?.id;
+      const messageId = cb.message?.message_id;
 
-app.delete('/api/test/:code', async (req, res) => {
-    try {
-        const code = String(req.params.code || '').trim();
-        const deleted = await deleteTestByCode(code);
-        if (!deleted) {
-            return res.status(404).json({ success: false, message: 'Test topilmadi!' });
-        }
-        return res.json({ success: true });
-    } catch (err) {
-        console.error('Testni o‘chirishda xato:', err);
-        return res.status(500).json({ success: false, message: 'Serverda ichki xatolik yuz berdi!' });
-    }
-});
+      if (data.startsWith("lang_") && chatId && messageId) {
+        const lang = data.replace("lang_", "");
+        const t = botTexts[lang] || botTexts.uz;
 
-app.post('/api/save-test', async (req, res) => {
-    try {
-        const body = req.body || {};
-        const ownerId = String(body.ownerId || 'local_guest').trim();
-        const title = String(body.title || '').trim();
-        const questions = Array.isArray(body.questions) ? body.questions : [];
-        const solveCount = Math.max(1, Math.min(parseInt(body.solveCount, 10) || questions.length, questions.length));
-        const timeMinutes = Math.max(1, Math.min(parseInt(body.timeMinutes, 10) || 30, 300));
-        const showEndMistakes = body.showEndMistakes !== false;
-        const showInstantAnswer = Boolean(body.showInstantAnswer);
-
-        if (!title) {
-            return res.status(400).json({ success: false, message: 'Test nomini kiriting!' });
-        }
-        if (questions.length < 1) {
-            return res.status(400).json({ success: false, message: 'Kamida 1 ta savol bo‘lishi kerak!' });
-        }
-
-        const cleanQuestions = [];
-        for (const item of questions) {
-            const q = String(item?.q || '').trim();
-            const opts = Array.isArray(item?.opts) ? item.opts.map(o => String(o || '').trim()) : [];
-            const correct = Number.isInteger(item?.correct) ? item.correct : parseInt(item?.correct, 10);
-
-            if (!q || opts.length !== 4 || opts.some(o => !o) || ![0, 1, 2, 3].includes(correct)) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Har bir savolda matn, 4 ta variant va to‘g‘ri javob bo‘lishi shart!'
-                });
-            }
-            cleanQuestions.push({ q, opts, correct });
-        }
-
-        const result = await saveOrUpdateTest({
-            ownerId,
-            requestedCode: body.code ? String(body.code).trim() : '',
-            title,
-            solveCount,
-            timeMinutes,
-            showEndMistakes,
-            showInstantAnswer,
-            questions: cleanQuestions
+        await telegramRequest("editMessageText", {
+          chat_id: chatId,
+          message_id: messageId,
+          text: t.welcome,
+          reply_markup: getStartKeyboard(lang)
         });
 
-        if (result.error) {
-            return res.status(400).json({ success: false, message: result.error });
-        }
-
-        return res.json({ success: true, code: result.code });
-    } catch (err) {
-        console.error('Test saqlashda xato:', err);
-        return res.status(500).json({ success: false, message: 'Serverda ichki xatolik yuz berdi!' });
+        await telegramRequest("answerCallbackQuery", {
+          callback_query_id: cb.id,
+          text: t.langChanged
+        });
+      }
     }
-});
 
-app.post('/api/import-file', upload.single('file'), async (req, res) => {
-    try {
-        if (!req.file) {
-            return res.status(400).json({ success: false, message: 'Fayl tanlanmadi!' });
-        }
-
-        const ext = path.extname(req.file.originalname || '').toLowerCase();
-        let questions = [];
-
-        if (ext === '.docx') {
-            const result = await mammoth.extractRawText({ buffer: req.file.buffer });
-            questions = parseDocxText(result.value || '');
-        } else if (ext === '.xlsx' || ext === '.xls') {
-            const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-            const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
-            questions = parseExcelRows(rows);
-        } else {
-            return res.status(400).json({ success: false, message: 'Faqat .docx yoki .xlsx fayllar qabul qilinadi!' });
-        }
-
-        if (!questions.length) {
-            return res.status(400).json({
-                success: false,
-                message: 'Fayldan to‘g‘ri formatdagi savollar topilmadi!'
-            });
-        }
-
-        return res.json({ success: true, questions });
-    } catch (err) {
-        console.error('Faylni o‘qishda xato:', err);
-        return res.status(500).json({ success: false, message: 'Faylni o‘qishda xatolik yuz berdi!' });
-    }
-});
-
-// --- Telegram Webhook ---
-app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
-    if (!BOT_TOKEN || typeof fetch !== 'function') return;
-
-    const msg = req.body?.message;
-    const chatId = msg?.chat?.id;
-    const text = String(msg?.text || '').trim();
-    if (!chatId || text !== '/start') return;
-
-    const host = req.get('host') || 'testora-i2yy.onrender.com';
-    const baseUrl = `https://${host}`;
-    const uid = msg.from?.id || chatId;
-    const appUrl = `${baseUrl}/?uid=${uid}`;
-
-    try {
-        await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                chat_id: chatId,
-                text:
-                    'Assalomu alaykum! *Testora* platformasiga xush kelibsiz.\n\n' +
-                    'Test tuzish yoki 6 xonali kod orqali test ishlash uchun quyidagi tugmalardan foydalaning. ' +
-                    'Kompyuterda to‘liq ekranda ishlash uchun saytni brauzerda ham ochishingiz mumkin:',
-                parse_mode: 'Markdown',
-                reply_markup: {
-                    inline_keyboard: [
-                        [
-                            { text: '🚀 Testora Web App', web_app: { url: appUrl } }
-                        ],
-                        [
-                            { text: '🌐 Brauzerda ochish', url: appUrl }
-                        ]
-                    ]
-                }
-            })
-        });
-    } catch (err) {
-        console.error('Telegram xabar yuborishda xato:', err.message);
-    }
+  } catch (err) {
+    console.error("Webhook xatosi:", err);
+    res.sendStatus(200);
+  }
 });
 
-app.use((err, req, res, next) => {
-    console.error('Umumiy xato:', err.message);
-    res.status(400).json({ success: false, message: err.message || 'So‘rovni bajarib bo‘lmadi!' });
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 initDatabase().then(() => {
-    app.listen(PORT, () => {
-        console.log(`Testora serveri ${PORT}-portda ishga tushdi.`);
-    });
+  app.listen(PORT, () => {
+    console.log(`Testora serveri ${PORT}-portda ishga tushdi.`);
+  });
 });
